@@ -26,44 +26,43 @@ function shouldCompress(req) {
   return true;
 }
 
-// Function to compress an image stream directly
-const sharpStream = _ => sharp({ animated: false, unlimited: true });
+// Function to compress an image buffer directly
+async function compress(req, res, buffer) {
+  sharp.cache(false);
+  sharp.concurrency(1);
+  sharp.simd(true);
+  const format = 'jpeg';
+  const sharpInstance = sharp(buffer, { unlimited: false, animated: false, limitInputPixels: false });
 
-function compress(req, res, input) {
-  const format = req.params.webp ? 'webp' : 'jpeg'
+  try {
+    const metadata = await sharpInstance.metadata();
 
-  /*
-   * Determine the uncompressed image size when there's no content-length header.
-   */
+    if (metadata.height > MAX_HEIGHT) {
+      sharpInstance.resize({ height: MAX_HEIGHT });
+    }
 
-  /*
-   * input.pipe => sharp (The compressor) => Send to httpResponse
-   * The following headers:
-   * |  Header Name  |            Description            |           Value            |
-   * |---------------|-----------------------------------|----------------------------|
-   * |x-original-size|Original photo size                |OriginSize                  |
-   * |x-bytes-saved  |Saved bandwidth from original photo|OriginSize - Compressed Size|
-   */
-  input.data.pipe(sharpStream()
-    .grayscale(req.params.grayscale)
-    .toFormat(format, {
-      quality: req.params.quality,
-      progressive: true,
-      optimizeScans: true
-    })
-    .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res)))
-}
+    if (req.params.grayscale) {
+      sharpInstance.grayscale();
+    }
 
-function _sendResponse(err, output, info, format, req, res) {
-  if (err || !info) throw err;
+    // Process the image and get the output buffer
+    const { data, info } = await sharpInstance
+      .toFormat(format, { quality: req.params.quality, effort: 0 })
+      .toBuffer({ resolveWithObject: true });
 
-  res.setHeader('content-type', 'image/' + format);
-  res.setHeader('content-length', info.size);
-  res.setHeader('x-original-size', req.params.originSize);
-  res.setHeader('x-bytes-saved', req.params.originSize - info.size);
-  res.status(200);
-  res.write(output);
-  res.end();
+    // Set headers for the compressed image
+    res.setHeader('Content-Type', `image/${format}`);
+    res.setHeader('X-Original-Size', req.params.originSize);
+    res.setHeader('X-Processed-Size', info.size);
+    res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+
+    // Send the processed image buffer in the response
+    res.write(data);
+    res.end();
+  } catch (err) {
+    console.error('Error processing image:', err.message);
+    res.status(500).send('Failed to process image.');
+  }
 }
 
 // Function to handle image compression requests
@@ -84,7 +83,7 @@ export async function fetchImageAndHandle(req, res) {
     const response = await axios({
       method: 'get',
       url: req.params.url,
-      responseType: 'stream'
+      responseType: 'arraybuffer' // Use arraybuffer to get the image as a buffer
     });
 
     if (response.status !== 200) {
@@ -96,16 +95,16 @@ export async function fetchImageAndHandle(req, res) {
     req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
 
     if (shouldCompress(req)) {
-      // Compress the stream
-      compress(req, res, response);
+      // Compress the buffer
+      await compress(req, res, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
       res.setHeader('Content-Length', req.params.originSize);
-      response.data.pipe(res);
+      response.data.pipe(res);;
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
   }
-                           }
+}
