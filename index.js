@@ -2,7 +2,7 @@
 "use strict";
 
 import express from "express";
-import {fetchImageAndHandle} from "./request.js";
+import {fetchImageAndHandle} from "./request1.js";
 const app = express();
 app.disable("x-powered-by");
 app.get("/", fetchImageAndHandle);
