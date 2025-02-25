@@ -27,43 +27,43 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-function compress(req, res, inputStream) {
-  sharp.cache(false);
-  sharp.concurrency(1);
-  sharp.simd(true);
-  const format = 'jpeg';
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
+const sharpStream = _ => sharp({ animated: false, unlimited: true });
 
-  inputStream.pipe(sharpInstance); // Pipe input stream to Sharp for processing
+function compress(req, res, input) {
+  const format = req.params.webp ? 'webp' : 'jpeg'
 
-  // Handle metadata and apply transformations
-  sharpInstance
-    .metadata()
-    .then((metadata) => {
-      if (metadata.height > MAX_HEIGHT) {
-        sharpInstance.resize({ height: MAX_HEIGHT });
-      }
+  /*
+   * Determine the uncompressed image size when there's no content-length header.
+   */
 
-      if (req.params.grayscale) {
-        sharpInstance.grayscale();
-      }
-
-      // Pipe the processed image directly to the response
-      res.setHeader('Content-Type', `image/${format}`);
-      sharpInstance
-        .toFormat(format, { quality: req.params.quality, effort: 0 })
-        .on('info', (info) => {
-          // Set headers for the compressed image
-          res.setHeader('X-Original-Size', req.params.originSize);
-          res.setHeader('X-Processed-Size', info.size);
-          res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
-        })
-        .pipe(res);
+  /*
+   * input.pipe => sharp (The compressor) => Send to httpResponse
+   * The following headers:
+   * |  Header Name  |            Description            |           Value            |
+   * |---------------|-----------------------------------|----------------------------|
+   * |x-original-size|Original photo size                |OriginSize                  |
+   * |x-bytes-saved  |Saved bandwidth from original photo|OriginSize - Compressed Size|
+   */
+  input.data.pipe(sharpStream()
+    .grayscale(req.params.grayscale)
+    .toFormat(format, {
+      quality: req.params.quality,
+      progressive: true,
+      optimizeScans: true
     })
-    .catch((err) => {
-      console.error('Error fetching metadata:', err.message);
-      res.status(500).send('Failed to fetch image metadata.');
-    });
+    .toBuffer((err, output, info) => _sendResponse(err, output, info, format, req, res)))
+}
+
+function _sendResponse(err, output, info, format, req, res) {
+  if (err || !info) throw err;
+
+  res.setHeader('content-type', 'image/' + format);
+  res.setHeader('content-length', info.size);
+  res.setHeader('x-original-size', req.params.originSize);
+  res.setHeader('x-bytes-saved', req.params.originSize - info.size);
+  res.status(200);
+  res.write(output);
+  res.end();
 }
 
 // Function to handle image compression requests
@@ -97,7 +97,7 @@ export async function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, res, response.data);
+      compress(req, res, response);
     } else {
       // Stream the original image to the response if compression is not needed
       res.setHeader('Content-Type', req.params.originType);
