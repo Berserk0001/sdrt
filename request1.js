@@ -11,28 +11,19 @@ const MAX_HEIGHT = 16383; // Resize if height exceeds this value
 function shouldCompress(req) {
   const { originType, originSize, webp } = req.params;
 
-  if (!originType.startsWith('image')) return false;
-  if (originSize === 0) return false;
-  if (req.headers.range) return false;
-  if (webp && originSize < MIN_COMPRESS_LENGTH) return false;
-  if (
-    !webp &&
-    (originType.endsWith('png') || originType.endsWith('gif')) &&
-    originSize < MIN_TRANSPARENT_COMPRESS_LENGTH
-  ) {
-    return false;
-  }
-
-  return true;
+  return originType.startsWith('image') &&
+         originSize > 0 &&
+         !req.headers.range &&
+         !(webp && originSize < MIN_COMPRESS_LENGTH) &&
+         !(!webp && (originType.endsWith('png') || originType.endsWith('gif')) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH);
 }
 
 // Function to compress an image stream directly
 async function compress(req, res, inputStream) {
   sharp.cache(false);
-  sharp.concurrency(1);
   sharp.simd(true);
   const format = 'jpeg';
-  const sharpInstance = sharp({ unlimited: false, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
 
   // Set headers for the compressed image
   res.setHeader('Content-Type', `image/${format}`);
@@ -56,15 +47,6 @@ async function compress(req, res, inputStream) {
 
   // Pipe the input stream to the transform stream
   inputStream.pipe(transformStream).pipe(res);
- /* // Directly write chunks to the response as they are processed
-  transformStream.on('data', (chunk) => {
-    res.write(chunk); // Write each processed chunk to the response
-  });
-
-  // When the transform stream ends, end the response
-  transformStream.on('end', () => {
-    res.end(); // Close the response
-  });*/
 
   // Handle any errors from the input stream
   inputStream.on('error', (err) => {
@@ -73,14 +55,13 @@ async function compress(req, res, inputStream) {
   });
 }
 
-
-
 // Function to handle image compression requests
 export async function fetchImageAndHandle(req, res) {
   const url = req.query.url;
   if (!url) {
     return res.status(400).send('Image URL is required.');
   }
+
   req.params = {
     url: decodeURIComponent(url),
     webp: !req.query.jpeg,
@@ -117,4 +98,4 @@ export async function fetchImageAndHandle(req, res) {
     console.error('Error fetching image:', error.message);
     res.status(500).send('Failed to fetch the image.');
   }
-                           }
+}
