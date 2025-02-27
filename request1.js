@@ -55,8 +55,7 @@ async function compress(req, res, inputStream) {
   });
 
   // Pipe the input stream to the transform stream
-  inputStream.pipe(transformStream);
-.pipe(res);
+  inputStream.pipe(transformStream).pipe(res);
  /* // Directly write chunks to the response as they are processed
   transformStream.on('data', (chunk) => {
     res.write(chunk); // Write each processed chunk to the response
