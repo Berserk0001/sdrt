@@ -1,6 +1,9 @@
-
 import fetch from 'node-fetch';
 import sharp from 'sharp';
+import { pipeline } from 'stream';
+import { promisify } from 'util';
+
+const pipelineAsync = promisify(pipeline);
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -19,37 +22,8 @@ function shouldCompress(req) {
          !(!webp && (originType.endsWith('png') || originType.endsWith('gif')) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH);
 }
 
-// Function to compress an image buffer directly
-async function compress(req, reply, buffer) {
-  sharp.cache(false);
-  sharp.simd(true);
-  const format = 'jpeg';
-  const sharpInstance = sharp(buffer, { unlimited: true, animated: false, limitInputPixels: false });
-
-  // Set headers for the compressed image
-  reply.header('Content-Type', `image/${format}`);
-  reply.header('X-Original-Size', req.params.originSize);
-
-  try {
-    // Convert the buffer to the desired format
-    const compressedBuffer = await sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .toBuffer();
-
-    // Set the processed size headers
-    reply.header('X-Processed-Size', compressedBuffer.length);
-    reply.header('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
-
-    // Send the compressed buffer as the response
-    reply.send(compressedBuffer);
-  } catch (err) {
-    console.error('Error processing image:', err.message);
-    reply.status(500).send('Failed to process image.');
-  }
-}
-
 // Function to handle image compression requests
-export async function fetchImageAndHandle(req, reply) {
+async function fetchImageAndHandle(req, reply) {
   const url = req.query.url;
   if (!url) {
     return reply.status(400).send('Image URL is required.');
@@ -74,20 +48,27 @@ export async function fetchImageAndHandle(req, reply) {
     req.params.originType = response.headers.get('content-type');
     req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
 
-    // Read the image into a buffer
-    const buffer = await response.buffer();
-
     if (shouldCompress(req)) {
-      // Compress the buffer
-      await compress(req, reply, buffer);
+      // Create a Sharp instance for processing
+      const sharpInstance = sharp()
+        .toFormat('jpeg', { quality: req.params.quality, effort: 0 })
+        .on('info', (info) => {
+          reply.header('Content-Type', `image/jpeg`);
+          reply.header('X-Original-Size', req.params.originSize);
+          reply.header('X-Processed-Size', info.size);
+          reply.header('X-Bytes-Saved', req.params.originSize - info.size);
+        });
+
+      // Stream the response body through Sharp and then to the reply
+      await pipelineAsync(response.body, sharpInstance, reply.raw);
     } else {
-      // Send the original buffer as the response if compression is not needed
+      // Stream the original image directly to the reply
       reply.header('Content-Type', req.params.originType);
       reply.header('Content-Length', req.params.originSize);
-      reply.send(buffer);
+      await pipelineAsync(response.body, reply.raw);
     }
   } catch (error) {
-    console.error('Error fetching image:', error.message);
-    reply.status(500).send('Failed to fetch the image.');
+    console.error('Error fetching or processing image:', error.message);
+    reply.status(500).send('Failed to fetch or process the image.');
   }
 }
