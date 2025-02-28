@@ -1,7 +1,6 @@
-//import Fastify from 'fastify';
 import fetch from 'node-fetch';
 import sharp from 'sharp';
-
+import { Readable } from 'node:stream';
 
 
 // Constants
@@ -21,29 +20,42 @@ function shouldCompress(req) {
          !(!webp && (originType.endsWith('png') || originType.endsWith('gif')) && originSize < MIN_TRANSPARENT_COMPRESS_LENGTH);
 }
 
-// Function to compress an image buffer directly
-async function compress(req, reply, buffer) {
+// Function to compress an image stream directly
+async function compress(req, reply, inputStream) {
   sharp.cache(false);
   sharp.simd(true);
   const format = 'jpeg';
-  const sharpInstance = sharp(buffer, { unlimited: true, animated: false, limitInputPixels: false });
+  const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
 
   // Set headers for the compressed image
   reply.header('Content-Type', `image/${format}`);
   reply.header('X-Original-Size', req.params.originSize);
 
   try {
-    // Convert the buffer to the desired format
-    const compressedBuffer = await sharpInstance
-      .toFormat(format, { quality: req.params.quality, effort: 0 })
-      .toBuffer();
+    // Create a transform stream to handle the output
+    const transformStream = sharpInstance
+      .toFormat(format, { quality: req.params.quality, effort: 0 });
 
-    // Set the processed size headers
-    reply.header('X-Processed-Size', compressedBuffer.length);
-    reply.header('X-Bytes-Saved', req.params.originSize - compressedBuffer.length);
+    // Handle the 'info' event to get the processed size
+    transformStream.on('info', (info) => {
+      reply.header('X-Processed-Size', info.size);
+      reply.header('X-Bytes-Saved', req.params.originSize - info.size);
+    });
 
-    // Send the compressed buffer as the response
-    reply.send(compressedBuffer);
+    // Handle errors during processing
+    transformStream.on('error', (err) => {
+      console.error('Error processing image:', err.message);
+      reply.status(500).send('Failed to process image.');
+    });
+
+    // Pipe the input stream to the transform stream
+    inputStream.pipe(transformStream).pipe(reply.raw);
+
+    // Handle any errors from the input stream
+    inputStream.on('error', (err) => {
+      console.error('Error reading input stream:', err.message);
+      reply.status(500).send('Failed to read input stream.');
+    });
   } catch (err) {
     console.error('Error processing image:', err.message);
     reply.status(500).send('Failed to process image.');
@@ -76,17 +88,17 @@ export async function fetchImageAndHandle(req, reply) {
     req.params.originType = response.headers.get('content-type');
     req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
 
-    // Read the image into a buffer
-    const buffer = await response.buffer();
+    // Convert the web stream to a Node.js readable stream
+    const stream = Readable.fromWeb(response.body);
 
     if (shouldCompress(req)) {
-      // Compress the buffer
-      await compress(req, reply, buffer);
+      // Compress the stream
+      await compress(req, reply, stream);
     } else {
-      // Send the original buffer as the response if compression is not needed
+      // Stream the original image to the response if compression is not needed
       reply.header('Content-Type', req.params.originType);
       reply.header('Content-Length', req.params.originSize);
-      reply.send(buffer);
+      reply.send(stream);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
