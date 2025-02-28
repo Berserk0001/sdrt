@@ -1,9 +1,6 @@
 import axios from 'axios';
 import sharp from 'sharp';
 
-const fastify = Fastify({ logger: true });
-const PORT = process.env.PORT || 3000;
-
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
