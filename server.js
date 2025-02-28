@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { fetchImageAndHandle } from './request1.js'; // Adjust the path as needed
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({ logger: false });
 
 // Route to handle image compression requests
 fastify.get('/', async (req, reply) => {
