@@ -4,6 +4,7 @@ import { pipeline } from 'stream';
 import { promisify } from 'util';
 sharp.cache(false);
 sharp.simd(true);
+sharp.concurrency(1);
 const pipelineAsync = promisify(pipeline);
 
 // Constants
