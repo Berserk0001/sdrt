@@ -19,7 +19,7 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-async function compress(req, reply, inputStream) {
+export async function compress(req, reply, inputStream) {
   sharp.cache(false);
   sharp.simd(true);
   const format = 'jpeg';
