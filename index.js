@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 "use strict";
 
-import express from "express";
-import {fetchImageAndHandle} from "./request1.js";
-const app = express();
-app.disable("x-powered-by");
-app.get("/", fetchImageAndHandle);
-app.get("/favicon.ico", (req, res) => res.status(204).end());
+import Fastify from 'fastify';
+import { fetchImageAndHandle } from './request1.js'; // Adjust the path as needed
+
+const app = Fastify({ logger: true });
+
+// Route to handle image compression requests
+app.get('/', async (req, reply) => {
+  await fetchImageAndHandle(req, reply);
+});
+
 
 export default app;
