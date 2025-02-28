@@ -2,7 +2,8 @@ import fetch from 'node-fetch';
 import sharp from 'sharp';
 import { pipeline } from 'stream';
 import { promisify } from 'util';
-
+sharp.cache(false);
+sharp.simd(true);
 const pipelineAsync = promisify(pipeline);
 
 // Constants
