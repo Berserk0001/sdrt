@@ -1,4 +1,5 @@
-import axios from 'axios';
+
+import fetch from 'node-fetch';
 import sharp from 'sharp';
 
 // Constants
@@ -19,7 +20,7 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-export async function compress(req, reply, inputStream) {
+async function compress(req, reply, inputStream) {
   sharp.cache(false);
   sharp.simd(true);
   const format = 'jpeg';
@@ -64,29 +65,25 @@ export async function fetchImageAndHandle(req, reply) {
   };
 
   try {
-    // Fetch the image using axios
-    const response = await axios({
-      method: 'get',
-      url: req.params.url,
-      responseType: 'stream'
-    });
+    // Fetch the image using node-fetch
+    const response = await fetch(req.params.url);
 
-    if (response.status !== 200) {
+    if (!response.ok) {
       return reply.status(response.status).send('Failed to fetch the image.');
     }
 
     // Extract headers
-    req.params.originType = response.headers['content-type'];
-    req.params.originSize = parseInt(response.headers['content-length'], 10) || 0;
+    req.params.originType = response.headers.get('content-type');
+    req.params.originSize = parseInt(response.headers.get('content-length'), 10) || 0;
 
     if (shouldCompress(req)) {
       // Compress the stream
-      await compress(req, reply, response.data);
+      await compress(req, reply, response.body);
     } else {
       // Stream the original image to the response if compression is not needed
       reply.header('Content-Type', req.params.originType);
       reply.header('Content-Length', req.params.originSize);
-      reply.send(response.data);
+      reply.send(response.body);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
