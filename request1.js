@@ -1,5 +1,5 @@
-import axios from "axios";
-import sharp from "sharp";
+import axios from 'axios';
+import sharp from 'sharp';
 
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
@@ -19,15 +19,15 @@ function shouldCompress(req) {
 }
 
 // Function to compress an image stream directly
-async function compress(req, res, inputStream) {
+async function compress(req, reply, inputStream) {
   sharp.cache(false);
   sharp.simd(true);
   const format = 'jpeg';
   const sharpInstance = sharp({ unlimited: true, animated: false, limitInputPixels: false });
 
   // Set headers for the compressed image
-  res.setHeader('Content-Type', `image/${format}`);
-  res.setHeader('X-Original-Size', req.params.originSize);
+  reply.header('Content-Type', `image/${format}`);
+  reply.header('X-Original-Size', req.params.originSize);
 
   // Create a transform stream to handle the output
   const transformStream = sharpInstance
@@ -35,31 +35,31 @@ async function compress(req, res, inputStream) {
 
   // Handle the 'info' event to get the processed size
   transformStream.on('info', (info) => {
-    res.setHeader('X-Processed-Size', info.size);
-    res.setHeader('X-Bytes-Saved', req.params.originSize - info.size);
+    reply.header('X-Processed-Size', info.size);
+    reply.header('X-Bytes-Saved', req.params.originSize - info.size);
   });
 
   // Handle errors during processing
   transformStream.on('error', (err) => {
     console.error('Error processing image:', err.message);
-    res.status(500).send('Failed to process image.');
+    reply.status(500).send('Failed to process image.');
   });
 
   // Pipe the input stream to the transform stream
-  inputStream.pipe(transformStream).pipe(res);
+  inputStream.pipe(transformStream).pipe(reply.raw);
 
   // Handle any errors from the input stream
   inputStream.on('error', (err) => {
     console.error('Error reading input stream:', err.message);
-    res.status(500).send('Failed to read input stream.');
+    reply.status(500).send('Failed to read input stream.');
   });
 }
 
 // Function to handle image compression requests
-export async function fetchImageAndHandle(req, res) {
+async function fetchImageAndHandle(req, reply) {
   const url = req.query.url;
   if (!url) {
-    return res.status(400).send('Image URL is required.');
+    return reply.status(400).send('Image URL is required.');
   }
 
   req.params = {
@@ -78,7 +78,7 @@ export async function fetchImageAndHandle(req, res) {
     });
 
     if (response.status !== 200) {
-      return res.status(response.status).send('Failed to fetch the image.');
+      return reply.status(response.status).send('Failed to fetch the image.');
     }
 
     // Extract headers
@@ -87,15 +87,15 @@ export async function fetchImageAndHandle(req, res) {
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, res, response.data);
+      compress(req, reply, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
-      res.setHeader('Content-Type', req.params.originType);
-      res.setHeader('Content-Length', req.params.originSize);
-      response.data.pipe(res);
+      reply.header('Content-Type', req.params.originType);
+      reply.header('Content-Length', req.params.originSize);
+      reply.send(response.data);
     }
   } catch (error) {
     console.error('Error fetching image:', error.message);
-    res.status(500).send('Failed to fetch the image.');
+    reply.status(500).send('Failed to fetch the image.');
   }
 }
