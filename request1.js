@@ -50,7 +50,7 @@ export async function compress(req, reply, inputStream) {
 }
 
 // Function to handle image compression requests
-async function fetchImageAndHandle(req, reply) {
+export async function fetchImageAndHandle(req, reply) {
   const url = req.query.url;
   if (!url) {
     return reply.status(400).send('Image URL is required.');
