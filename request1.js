@@ -46,7 +46,7 @@ async function compress(req, reply, inputStream) {
   });
 
   // Pipe the input stream to the transform stream
-  inputStream.pipe(transformStream).pipe(reply.raw);
+  inputStream.pipe(transformStream).pipe(reply);
 
   // Handle any errors from the input stream
   inputStream.on('error', (err) => {
