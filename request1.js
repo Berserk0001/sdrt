@@ -1,6 +1,9 @@
 import axios from 'axios';
 import sharp from 'sharp';
 
+const fastify = Fastify({ logger: true });
+const PORT = process.env.PORT || 3000;
+
 // Constants
 const MIN_COMPRESS_LENGTH = 1024;
 const MIN_TRANSPARENT_COMPRESS_LENGTH = MIN_COMPRESS_LENGTH * 100;
@@ -29,34 +32,28 @@ async function compress(req, reply, inputStream) {
   reply.header('Content-Type', `image/${format}`);
   reply.header('X-Original-Size', req.params.originSize);
 
-  // Create a transform stream to handle the output
-  const transformStream = sharpInstance
-    .toFormat(format, { quality: req.params.quality, effort: 0 });
+  try {
+    // Create a transform stream to handle the output
+    const transformStream = sharpInstance
+      .toFormat(format, { quality: req.params.quality, effort: 0 });
 
-  // Handle the 'info' event to get the processed size
-  transformStream.on('info', (info) => {
-    reply.header('X-Processed-Size', info.size);
-    reply.header('X-Bytes-Saved', req.params.originSize - info.size);
-  });
+    // Convert the stream to a buffer
+    const buffer = await transformStream.toBuffer();
 
-  // Handle errors during processing
-  transformStream.on('error', (err) => {
+    // Set the processed size headers
+    reply.header('X-Processed-Size', buffer.length);
+    reply.header('X-Bytes-Saved', req.params.originSize - buffer.length);
+
+    // Send the buffer as the response
+    reply.send(buffer);
+  } catch (err) {
     console.error('Error processing image:', err.message);
     reply.status(500).send('Failed to process image.');
-  });
-
-  // Pipe the input stream to the transform stream
-  inputStream.pipe(transformStream).pipe(reply);
-
-  // Handle any errors from the input stream
-  inputStream.on('error', (err) => {
-    console.error('Error reading input stream:', err.message);
-    reply.status(500).send('Failed to read input stream.');
-  });
+  }
 }
 
 // Function to handle image compression requests
-export async function fetchImageAndHandle(req, reply) {
+async function fetchImageAndHandle(req, reply) {
   const url = req.query.url;
   if (!url) {
     return reply.status(400).send('Image URL is required.');
@@ -87,7 +84,7 @@ export async function fetchImageAndHandle(req, reply) {
 
     if (shouldCompress(req)) {
       // Compress the stream
-      compress(req, reply, response.data);
+      await compress(req, reply, response.data);
     } else {
       // Stream the original image to the response if compression is not needed
       reply.header('Content-Type', req.params.originType);
