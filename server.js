@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { fetchImageAndHandle } from './request1.js'; // Adjust the path as needed
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({ logger: false });
 
 // Route to handle image compression requests
 fastify.get('/', async (req, reply) => {
@@ -11,8 +11,8 @@ fastify.get('/', async (req, reply) => {
 // Start the server
 const start = async () => {
   try {
-    await fastify.listen({ port: 3000 });
-    fastify.log.info(`Server is running on port 3000`);
+    await fastify.listen({ port: 8080, host: '0.0.0.0' });
+    fastify.log.info(`Server is running on http://0.0.0.0:8080`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
